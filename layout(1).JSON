@@ -1,0 +1,273 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Factory Layout Schema",
+  "type": "object",
+  "required": ["Site"],
+  "properties": {
+    "site" : {
+      "type":"object",
+      "required": ["name","id"],
+      "properties": {
+        "factories": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Factory" }
+        },
+        "name" : { "type": "string" },
+        "id" : { "type": "string" }
+
+      }
+    }
+  },
+  "definitions": {
+    "ProcessLines" : {
+      "type" : "array",
+      "items": {"$ref": "#/definitions/ProcessLine"}
+    },
+    "ProcessLine" : {
+      "type" : "object",
+      "properties": {
+          "description" : {"type" : "string"},
+          "constraints" : {"type" : "string"},
+          "ZoneLines" : {"type" : "array","items":{"$ref": "#/definitions/Zone"}}
+      }
+    },
+    "VisualBoard": {
+      "type": "object",
+      "required": ["id", "position", "size", "attached_to", "poster_content"],
+      "properties": {
+        "id": { "type": "string" },
+        "position": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
+      "height" : {"type" :"string"},
+      "width" : {"type" :"string"},
+      "attached_to": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["wall", "zone"] },
+        "target_id": { "type": "string" }
+        }
+      },
+      "poster_content": {
+        "type": "string",
+        "zhushi":  "URL"},
+      "description": { "type": "string" },
+      "constraints": { "type": "string" }
+  }
+    },
+    "Factory": {
+      "type": "object",
+      "required": ["size","walls","structures","zones","flows"],
+      "properties": {
+        "id": { "type": "string" },
+        "name" : {"type" : "string"},
+        "size": {
+          "type":"array",
+          "items": {"type":"array", "items": {"type":"number"}}
+        },
+        "structures": {
+          "type": "object",
+          "properties": {
+            "columns": { "type": "array", "items": { "$ref": "#/definitions/Column" } },
+            "walls": { "type": "array", "items": { "$ref": "#/definitions/Wall" } },
+            "outdoor_appendix_zone" : {
+              "type": "array",
+              "items": { "$ref": "#/definitions/Zone" }
+            }
+          }
+        },
+        "Equipments": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/equipment" }
+        },
+        "zones": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Zone" }
+        }, 
+        "flows":{
+          "type": "array",
+          "items":{"$ref" :"#/definitions/Flow"}
+        },
+        "description" : {"type" : "string"},
+        "constraints": {"type" : "string"},
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "author": { "type": "string" },
+            "created_at": { "type": "string", "format": "date-time" }
+          }
+        }
+      }
+    },
+    "Wall": {
+      "type": "object",
+      "required": ["id","start", "end", "thickness", "height","name"],
+      "properties": {
+        "id": { "type": "string" },
+        "start": { "type": "array", "items": { "type": "number" } },
+        "end": { "type": "array", "items": { "type": "number" } },
+        "thickness": { "type": "number" },
+        "height": { "type": "number" },
+        "name" : {"type" :  "string"},
+        "doors" : {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Door" }
+        },
+        "visualboards" : {
+          "type" :"array",
+          "items": {"$ref": "#/definitions/VisualBoard"}
+        },
+        "windows" : {
+          "type" : "array",
+          "items": { "$ref": "#/definitions/Window"}
+        },
+        "description" : {"type" : "string"},
+        "constraints": {"type" : "string"}
+      }
+    },
+    "child_flow":{
+      "type":"object",
+      "required": ["id","start","end","is_first","islast","width","is_bidirectional"],
+      "properties": {
+        "id": { "type": "string" },
+        "start": { "type": "array", "items": { "type": "number" } },
+        "end": { "type": "array", "items": { "type": "number" } },
+        "is_first": { "type": "boolean" },
+        "is_last": { "type": "boolean" },
+        "width": { "type": "number" },
+        "is_bidirectional": { "type": "boolean" },
+        "description" : {"type" : "string"},
+        "constraints": {"type" : "string"}
+      }
+
+    },
+    "Door": {
+      "type": "object",
+      "required": ["id","position","width","height","name"],
+      "properties": {
+        "id" : {"type" : "string"},
+        "width": {
+          "type":"number"
+        },
+        "position" : {
+          "type" : "array",
+          "items": {"type" : "number"}
+        },
+
+        "height" : {"type" : "number"},
+        "name": { "type": "string" },
+        "description" : {"type" : "string"},
+        "constraints": {"type" : "string"}
+      }
+    },
+    "Column":{
+      "type" : "object",
+      "required": ["id","points","name","shape"],
+      "properties": {
+        "id" : {"type" : "string"},
+        "points" : {"type" : "array", "items": {"type": "array", "items": {"type": "number"}}},
+        "name" : {"type" : "string"},
+        "shape" : {"type":"string"},
+        "description" : {"type" : "string"},
+        "constraints": {"type" : "string"}
+      }
+    },
+    "Window" : {
+      "type" : "object",
+      "required": ["height","position","size","id"],
+      "properties": {
+        "id" : {"type" : "string"},
+        "position" : {"type" :"array","items":  {"type" : "number"}},
+        "size" : {"type" : "array","items": {"type" : "number"}},
+        "height" : {"type" : "number"},
+        "description" : {"type" : "string"},
+        "constraints" : {"type" : "string"}
+      }
+    },
+    "equipment": {
+      "type": "object",
+      "required": ["id", "width", "position", "length","rotation","height","model","name"],
+      "properties": {
+        "name" : {"type" : "string"},
+        "id": { "type": "string" },
+        "width" : {"type" : "number"},
+        "length" : {"type" : "number"},
+        "height" : {"type" : "number"},
+        "rotation"  : {"type" : "number"},
+        "position": { "type": "array", "items": { "type": "number" } },
+        "dwg_model" : {"type" : "string"},
+        "skp_model" : {"type" : "string"},
+        "description" : {"type" : "string"},
+        "constraints": {"type" : "string"}
+      }
+    },
+    "Flow":{
+      "type":"object",
+      "required": ["child_corridors","start","end"],
+      "properties": {
+        "start_position" : {"type":"array","items":{"type":"number"}},
+        "end_position" : {"type":"array","items":{"type":"number"}},
+        "child_flows" : {
+          "type": "array",
+          "items": { "$ref": "#/definitions/child_flow" }
+        },
+        "start_zone" : {"type" : "string"},
+        "end_zone" : {"type" : "string"},
+        "description" : {"type" : "string"},
+        "constraints": {"type" : "string"}
+      }
+    },
+    "zone_entrance":{
+      "type" : "object",
+      "properties": {
+          "is_entry" : {"type" : "boolean"},
+          "is_exit" : {"type" : "boolean"},
+          "is_bidirectional" : {"type" : "boolean"},
+          "type" : {
+              "type" : "string",
+              "enum": ["material","personnel"]
+          },
+          "position" : {
+              "type" : "array",
+              "items": {"type" : "number"}
+          },
+          "width" : {"type" : "number"},
+          "height" : {"type" : "number"}
+      }
+    },
+    "Zone": {
+      "type": "object",
+      "required": ["id", "name", "shape","zone_entrances"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "shape": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string" },
+            "points": {
+              "type": "array",
+              "items": { "type": "array", "items": { "type": "number" } }
+            }
+          }
+        },
+        "description" : {"type" : "string"},
+        "constraints": {"type" : "string"},
+        "zone_entrances" : {
+          "type": "array",
+          "items": { "$ref": "#/definitions/zone_entrance" }
+        },
+        "visualboards" : {
+          "type" : "array",
+          "items":  {"$ref": "#/definitions/VisualBoard"}
+        },
+        "objects": { "type": "array", "items": { "$ref": "#/definitions/Object_" } },
+        "zones" : {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Zone"}
+        }
+      }
+    }
+  }
+}

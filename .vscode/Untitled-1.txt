@@ -1,0 +1,12 @@
+// filepath: d:\VS code\project\.vscode\launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug main.rb",
+      "type": "Ruby",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.rb"
+    }
+  ]
+}
