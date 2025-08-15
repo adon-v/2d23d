@@ -18,8 +18,8 @@ module StructureBuilder
         puts "创建立柱: #{column_data['name'] || column_data['id']}"
         puts "立柱点数: #{points.size}"
         
-        # 验证点的有效性
-        valid_points = points.select { |pt| pt && pt.valid? }
+        # 验证点的有效性 - Geom::Point3d对象没有valid?方法
+        valid_points = points.select { |pt| pt && pt.is_a?(Geom::Point3d) }
         if valid_points.size < 3
           puts "警告: 立柱有效点数不足，跳过"
           next
@@ -27,22 +27,25 @@ module StructureBuilder
         
         # 创建立柱面
         column_face = parent_group.entities.add_face(valid_points)
-        unless column_face && column_face.valid?
+        unless column_face && column_face.is_a?(Sketchup::Face)
           puts "警告: 无法创建立柱面，跳过"
           next
         end
         
-        # 设置立柱高度
-        height = Utils.parse_number("10000" || 3.0)
-        height = 3.0 if height <= 0
-        height = height / inch_scale_factor
+        # 设置立柱高度 - 修复高度计算逻辑
+        height = Utils.parse_number(column_data["height"] || 10000)
+        height = 10000 if height <= 0  # 默认10米
+        height = height / inch_scale_factor  # 转换为英寸
         
         # 拉伸立柱
         begin
+          puts "开始拉伸立柱，高度: #{height}英寸"
           column_face.pushpull(-height)
-          puts "立柱拉伸成功，高度: #{height}米"
+          puts "立柱拉伸成功，高度: #{height}英寸 (#{height * 0.0254}米)"
         rescue => e
           puts "立柱拉伸失败: #{e.message}"
+          puts "立柱数据: #{column_data.inspect}"
+          puts "立柱点: #{valid_points.inspect}"
           # 即使拉伸失败，也保留立柱面
         end
         

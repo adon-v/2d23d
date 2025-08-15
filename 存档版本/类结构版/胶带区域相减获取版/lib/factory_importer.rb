@@ -1,5 +1,6 @@
 # 工厂导入主模块：处理工厂布局导入的主要逻辑
 require 'json'
+require_relative 'coordinate_processor'
 
 module FactoryImporter
   # 导入工厂布局
@@ -18,6 +19,11 @@ module FactoryImporter
         UI.messagebox("无效的工厂布局文件: 缺少site属性")
         return
       end
+      
+      # 应用坐标预处理，将整个工厂模型平移到第一象限
+      puts "开始坐标预处理..."
+      layout_data = CoordinateProcessor.process_factory_coordinates(layout_data)
+      puts "坐标预处理完成"
       
       model = Sketchup.active_model
       model.start_operation("导入工厂布局", true)

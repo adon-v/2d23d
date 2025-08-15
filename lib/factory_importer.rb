@@ -1,5 +1,6 @@
 # 工厂导入主模块：处理工厂布局导入的主要逻辑
 require 'json'
+require_relative 'coordinate_processor'
 
 module FactoryImporter
   # 导入工厂布局
@@ -18,6 +19,11 @@ module FactoryImporter
         UI.messagebox("无效的工厂布局文件: 缺少site属性")
         return
       end
+      
+      # 应用坐标预处理，将整个工厂模型平移到第一象限
+      puts "开始坐标预处理..."
+      layout_data = CoordinateProcessor.process_factory_coordinates(layout_data)
+      puts "坐标预处理完成"
       
       model = Sketchup.active_model
       model.start_operation("导入工厂布局", true)
@@ -79,8 +85,9 @@ module FactoryImporter
   # 导入工厂数据
   # 这里加一个main_group的传参，方便防止组件在最基础的组上
   def self.import_factory(factories_data, parent_group,main_group)
-    # 用于暂存所有门数据
+    # 用于暂存所有门和窗户数据
     all_door_data = []
+    all_window_data = []
     
     factories_data.each do |factory_data|
       begin
@@ -107,18 +114,30 @@ module FactoryImporter
         #StructureBuilder.import_corridors(factory_data["flows"] || [], factory_group) if defined?(StructureBuilder.import_corridors)
         StructureBuilder.import_objects(object_data || [], factory_group) if defined?(StructureBuilder.import_objects)
         
-        # 4. 暂存门数据（不立即创建）
+        # 4. 暂存门和窗户数据（不立即创建）
         # 收集墙体上的门
         if walls_data.is_a?(Array)
           walls_data.each do |wall_data|
-            next unless wall_data.key?('doors') && !wall_data['doors'].empty?
+            # 收集门数据
+            if wall_data.key?('doors') && !wall_data['doors'].empty?
+              wall_data['doors'].each do |door_data|
+                all_door_data << {
+                  door_data: door_data,
+                  wall_data: wall_data,
+                  parent_group: factory_group
+                }
+              end
+            end
             
-            wall_data['doors'].each do |door_data|
-              all_door_data << {
-                door_data: door_data,
-                wall_data: wall_data,
-                parent_group: factory_group
-              }
+            # 收集窗户数据
+            if wall_data.key?('windows') && !wall_data['windows'].empty?
+              wall_data['windows'].each do |window_data|
+                all_window_data << {
+                  window_data: window_data,
+                  wall_data: wall_data,
+                  parent_group: factory_group
+                }
+              end
             end
           end
         end
@@ -128,6 +147,15 @@ module FactoryImporter
         factory_doors.each do |door_data|
           all_door_data << {
             door_data: door_data,
+            parent_group: factory_group
+          }
+        end
+        
+        # 收集工厂窗户
+        factory_windows = factory_data["factory_windows"] || []
+        factory_windows.each do |window_data|
+          all_window_data << {
+            window_data: window_data,
             parent_group: factory_group
           }
         end
@@ -152,8 +180,9 @@ module FactoryImporter
       end
     end
     
-    # 5. 所有墙体创建完成后，统一创建门（核心滞后逻辑）
+    # 5. 所有墙体创建完成后，统一创建门和窗户（核心滞后逻辑）
     DoorBuilder.create_all_doors(all_door_data, parent_group)
+    WindowBuilder.create_all_windows(all_window_data, parent_group)
   end
   
   # 获取墙体数据

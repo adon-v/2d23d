@@ -140,14 +140,24 @@ module DoorBuilder
     
     # 确保门宽度有效
     door_width = (end_point - start_point).length
+    
+    # 检查门宽度是否合理（门不应该超过10米宽，允许更大的门）
+    max_reasonable_width = 10.0  # 10米，允许更大的门
     if door_width < 0.001
-      puts "警告: 门的宽度过小，使用默认值0.9米"
+      puts "警告: 门的宽度#{door_width}米过小，使用默认值0.9米"
       door_width = 0.9
       
       # 当宽度无效时，基于墙体方向计算门的起点和终点
       half_width = door_width / 2
       start_point = door_center - wall_direction * half_width
       end_point = door_center + wall_direction * half_width
+      
+      puts "重新计算门边界: 中心点=#{door_center}, 起点=#{start_point}, 终点=#{end_point}"
+    elsif door_width > max_reasonable_width
+      puts "警告: 门的宽度#{door_width}米过大，但继续使用原始尺寸"
+      puts "门宽度: #{door_width}米，位置: 起点=#{start_point}, 终点=#{end_point}"
+    else
+      puts "门宽度正常: #{door_width}米"
     end
     
     # 计算墙体法线方向（垂直于墙体方向和向上方向）
@@ -159,7 +169,7 @@ module DoorBuilder
       puts "警告: 法线向量计算失败，使用默认法线方向"
     end
     
-    # 计算门的四个角点
+    # 计算门的四个角点 - 确保门在正确的高度
     door_points = [
       start_point,
       end_point,
@@ -189,7 +199,7 @@ module DoorBuilder
       if door_face
         # 设置门的材质
         door_face.material = [200, 200, 200]  # 浅灰色
-        puts "在厚度为0的墙体上创建门成功"
+        puts "在厚度为0的墙体上创建门成功，门点: #{door_points.inspect}"
       else
         puts "警告: 创建门的面失败，点可能共线或无效"
         puts "  门点: #{door_points.inspect}"
@@ -200,7 +210,7 @@ module DoorBuilder
     end
   end
   
-  # 在正常厚度墙体上创建门
+  # 在正常厚度墙体上创建门 - 使用智能投影方法
   def self.create_door_on_normal_wall(wall_group, wall_data, door_data, start_point, end_point, height)
     model = Sketchup.active_model
     model.start_operation("创建墙体门", true)
@@ -216,69 +226,170 @@ module DoorBuilder
       return
     end
   
-    wall_vector = wall_end - wall_start
-    if wall_vector.length < 0.001
-      puts "警告: 墙体向量长度过小，无法创建门"
-      model.abort_operation
-      return
-    end
-  
-    # 计算墙体厚度方向（法线）
-    wall_normal = wall_vector.cross(Geom::Vector3d.new(0, 0, 1)).normalize
-    wall_normal = wall_normal.reverse if wall_normal.x < 0
-  
-    # 墙体厚度 - 毫米转米（已在调用此函数前转换）
-    wall_thickness = Utils.parse_number(wall_data["thickness"]) * 0.001
-    wall_thickness = 0.2 if wall_thickness <= 0
-
-    # 门宽度和方向
+    puts "=== 智能门洞生成 ==="
+    puts "墙体起点: #{wall_start.inspect}"
+    puts "墙体终点: #{wall_end.inspect}"
+    puts "门起点: #{start_point.inspect}"
+    puts "门终点: #{end_point.inspect}"
+    
+    # 计算门宽度
     door_vector = end_point - start_point
     door_width = door_vector.length
+    
+    # 检查门宽度是否合理
+    max_reasonable_width = 10.0  # 10米，允许更大的门
     if door_width < 0.001
-      puts "警告: 门的宽度过小，使用默认值0.9米"
+      puts "警告: 门的宽度#{door_width}米过小，使用默认值0.9米"
       door_width = 0.9
+      
+      # 计算门的中心点
       door_center = Geom::Point3d.new(
         (start_point.x + end_point.x) / 2,
         (start_point.y + end_point.y) / 2,
         (start_point.z + end_point.z) / 2
       )
-      door_direction = wall_vector.normalize
-      start_point = door_center - door_direction * (door_width / 2)
-      end_point = door_center + door_direction * (door_width / 2)
+      
+      # 基于墙体方向重新计算门的起点和终点
+      wall_vector = wall_end - wall_start
+      wall_direction = wall_vector.normalize
+      half_width = door_width / 2
+      start_point = door_center - wall_direction * half_width
+      end_point = door_center + wall_direction * half_width
+      
+      puts "重新计算门边界: 中心点=#{door_center}, 起点=#{start_point}, 终点=#{end_point}"
+    elsif door_width > max_reasonable_width
+      puts "警告: 门的宽度#{door_width}米过大，但继续使用原始尺寸"
+      puts "门宽度: #{door_width}米"
     else
-      door_direction = door_vector.normalize
+      puts "门宽度正常: #{door_width}米"
     end
-  
-    # 计算厚度方向向量
-    thickness_vec = wall_normal.clone
-    thickness_vec.length = wall_thickness / 0.0254
-
-    # 门洞底部四点
-    bottom_points = [
-      start_point,
-      end_point,
-      end_point + thickness_vec,
-      start_point + thickness_vec
-    ]
-    top_points = bottom_points.map { |p| p + Geom::Vector3d.new(0, 0, height) }
-  
-    # 创建门洞面并拉伸
-    puts bottom_points
+    
+    # 智能投影：将门坐标投影到墙体上
+    puts "\n=== 坐标投影阶段 ==="
+    projected_start = project_point_to_wall(start_point, wall_start, wall_end)
+    projected_end = project_point_to_wall(end_point, wall_start, wall_end)
+    
+    puts "投影后门起点: #{projected_start.inspect}"
+    puts "投影后门终点: #{projected_end.inspect}"
+    
+    # 获取墙体厚度（从已生成的墙体几何中提取）
+    wall_thickness = extract_wall_thickness(wall_group, wall_data)
+    puts "提取的墙体厚度: #{wall_thickness}英寸"
+    
+    # 计算门洞地面四点坐标
+    puts "\n=== 门洞四点计算 ==="
+    ground_points = calculate_door_ground_points(projected_start, projected_end, wall_thickness)
+    
+    puts "门洞地面四点:"
+    ground_points.each_with_index do |point, i|
+      puts "  点#{i+1}: #{point.inspect}"
+    end
+    
+    # 创建门洞面
     wall_entities = wall_group.entities
-    door_base_face = wall_entities.add_face(bottom_points)
+    door_base_face = wall_entities.add_face(ground_points)
+    
     if door_base_face
+      puts "门洞面创建成功"
+      
+      # 直接沿Z轴正方向挖洞
+      puts "开始沿Z轴正方向挖洞，高度: #{height}米"
       door_base_face.pushpull(height / 0.0254)
-      puts height
-      puts "在墙体上成功创建门洞，厚度=#{wall_thickness}米"
+      
+      puts "门洞生成完成！"
+      puts "门高度: #{height}米"
+      puts "门洞深度: #{wall_thickness * 0.0254}米"
     else
-      puts "警告: 创建门洞面失败，点可能共线或无效"
-      puts "  门点: #{bottom_points.inspect}"
+      puts "警告: 门洞面创建失败"
+      puts "  地面四点: #{ground_points.inspect}"
     end
   
     model.commit_operation
   rescue => e
     model.abort_operation if model
     puts "创建门失败: #{Utils.ensure_utf8(e.message)}"
+    puts "错误详情: #{e.backtrace.join("\n")}"
+  end
+  
+  # 将点投影到墙体上
+  def self.project_point_to_wall(point, wall_start, wall_end)
+    wall_vector = wall_end - wall_start
+    wall_length = wall_vector.length
+    
+    if wall_length < 0.001
+      puts "警告: 墙体长度过小，无法投影"
+      return point
+    end
+    
+    # 计算点到墙体的投影
+    wall_direction = wall_vector.normalize
+    point_to_wall_start = point - wall_start
+    
+    # 计算投影参数 t (0 <= t <= 1 表示在墙体上)
+    t = point_to_wall_start.dot(wall_direction) / wall_length
+    
+    # 限制投影点在墙体范围内
+    t = [0.0, [t, 1.0].min].max
+    
+    # 计算投影点 - 修复向量乘法问题
+    # 使用标量乘法而不是向量乘法
+    projection_distance = t * wall_length
+    projection_vector = wall_direction.clone
+    projection_vector.length = projection_distance
+    projected_point = wall_start + projection_vector
+    
+    puts "  原始点: #{point.inspect}"
+    puts "  投影参数 t: #{t}"
+    puts "  投影距离: #{projection_distance}"
+    puts "  投影点: #{projected_point.inspect}"
+    
+    projected_point
+  end
+  
+  # 从已生成的墙体几何中提取厚度
+  def self.extract_wall_thickness(wall_group, wall_data)
+    # 首先尝试从wall_data中获取厚度
+    thickness_mm = Utils.parse_number(wall_data["thickness"] || 200)
+    thickness_m = thickness_mm * 0.001
+    thickness_inches = thickness_m / 0.0254
+    
+    puts "  从数据获取厚度: #{thickness_mm}mm = #{thickness_m}m = #{thickness_inches}英寸"
+    
+    # 如果厚度为0或无效，使用默认值
+    if thickness_inches <= 0.001
+      thickness_inches = 7.874  # 200mm = 7.874英寸
+      puts "  使用默认厚度: #{thickness_inches}英寸"
+    end
+    
+    thickness_inches
+  end
+  
+  # 计算门洞地面四点坐标
+  def self.calculate_door_ground_points(start_point, end_point, wall_thickness)
+    # 计算墙体方向向量
+    wall_vector = end_point - start_point
+    wall_direction = wall_vector.normalize
+    
+    # 计算墙体法线（垂直于墙体方向和向上方向）
+    wall_normal = wall_direction.cross(Geom::Vector3d.new(0, 0, 1)).normalize
+    
+    # 计算厚度向量 - 修复向量乘法问题
+    thickness_vec = wall_normal.clone
+    thickness_vec.length = wall_thickness
+    
+    # 计算门洞地面四点（逆时针顺序）
+    ground_points = [
+      start_point,                                    # 点1：起点
+      start_point + thickness_vec,                    # 点2：起点+厚度
+      end_point + thickness_vec,                      # 点3：终点+厚度
+      end_point                                       # 点4：终点
+    ]
+    
+    puts "  墙体方向: #{wall_direction.inspect}"
+    puts "  墙体法线: #{wall_normal.inspect}"
+    puts "  厚度向量: #{thickness_vec.inspect}"
+    
+    ground_points
   end
   
   # 导入独立门（非墙体上的门）

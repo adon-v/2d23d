@@ -214,8 +214,9 @@ module DoorBuilder
   def self.create_door_on_normal_wall(wall_group, wall_data, door_data, start_point, end_point, height)
     model = Sketchup.active_model
     model.start_operation("创建墙体门", true)
-  
-    # 获取墙体坐标
+    
+    begin
+      # 获取墙体坐标
     wall_start = Utils.validate_and_create_point(wall_data["start"])
     wall_end = Utils.validate_and_create_point(wall_data["end"])
   
@@ -266,11 +267,43 @@ module DoorBuilder
     
     # 智能投影：将门坐标投影到墙体上
     puts "\n=== 坐标投影阶段 ==="
+    
+    # 检查门是否在墙体上或附近
+    door_center = Geom::Point3d.new(
+      (start_point.x + end_point.x) / 2,
+      (start_point.y + end_point.y) / 2,
+      (start_point.z + end_point.z) / 2
+    )
+    
+    # 计算门到墙体的距离
+    distance_to_wall = distance_point_to_wall(door_center, wall_start, wall_end)
+    puts "门中心到墙体的距离: #{distance_to_wall}米"
+    
+    # 如果门距离墙体太远（超过1米），可能投影错了墙体
+    if distance_to_wall > 1.0
+      puts "警告: 门距离墙体过远，可能投影错了墙体"
+      puts "建议检查门应该投影到哪一面墙"
+    end
+    
     projected_start = project_point_to_wall(start_point, wall_start, wall_end)
     projected_end = project_point_to_wall(end_point, wall_start, wall_end)
     
     puts "投影后门起点: #{projected_start.inspect}"
     puts "投影后门终点: #{projected_end.inspect}"
+    
+    # 验证投影结果
+    projected_center = Geom::Point3d.new(
+      (projected_start.x + projected_end.x) / 2,
+      (projected_start.y + projected_end.y) / 2,
+      (projected_start.z + projected_end.z) / 2
+    )
+    
+    projected_distance = distance_point_to_wall(projected_center, wall_start, wall_end)
+    puts "投影后门中心到墙体的距离: #{projected_distance}米"
+    
+    if projected_distance > 0.1
+      puts "警告: 投影后门仍然不在墙体上，可能存在坐标问题"
+    end
     
     # 获取墙体厚度（从已生成的墙体几何中提取）
     wall_thickness = extract_wall_thickness(wall_group, wall_data)
@@ -285,30 +318,192 @@ module DoorBuilder
       puts "  点#{i+1}: #{point.inspect}"
     end
     
-    # 创建门洞面
+    # 创建门洞面并确保正确的挖洞方向
     wall_entities = wall_group.entities
+    
+    puts "\n=== 门洞面创建阶段 ==="
+    puts "门洞地面四点:"
+    ground_points.each_with_index do |point, i|
+      puts "  点#{i+1}: #{point.inspect}"
+    end
+    
+    # 验证门洞四点是否形成有效面
+    if ground_points.length >= 3
+      # 计算面的法线
+      edge1 = ground_points[1] - ground_points[0]
+      edge2 = ground_points[2] - ground_points[0]
+      calculated_normal = edge1.cross(edge2).normalize
+      puts "计算的法线: #{calculated_normal.inspect}"
+    end
+    
+    # 尝试创建门洞面
     door_base_face = wall_entities.add_face(ground_points)
+    puts "门洞面创建结果: #{door_base_face.inspect}"
     
     if door_base_face
       puts "门洞面创建成功"
       
-      # 直接沿Z轴正方向挖洞
-      puts "开始沿Z轴正方向挖洞，高度: #{height}米"
-      door_base_face.pushpull(height / 0.0254)
+      # 检查门洞面是否有效
+      if door_base_face.valid?
+        puts "门洞面详细信息:"
+        puts "  顶点数: #{door_base_face.vertices.length}"
+        puts "  边数: #{door_base_face.edges.length}"
+      end
       
-      puts "门洞生成完成！"
+      # 检查面的法线方向，确保朝上
+      face_normal = door_base_face.normal
+      puts "门洞面法线: #{face_normal.inspect}"
+      
+      # 如果法线朝下（Z分量为负），需要翻转面
+      if face_normal.z < 0
+        puts "检测到法线朝下，翻转门洞面"
+        door_base_face.reverse!
+        puts "翻转后面法线: #{door_base_face.normal.inspect}"
+      end
+      
+      # 验证门洞面仍然有效
+      unless door_base_face.valid?
+        puts "❌ 门洞面在翻转后变为无效，无法继续"
+        return
+      end
+      
+      # 确保法线朝上后，沿Z轴正方向挖洞
+      puts "\n=== 挖洞阶段 ==="
+      puts "开始沿Z轴正方向挖洞，高度: #{height}米 = #{height / 0.0254}英寸"
+      
+      # 分步挖洞，确保每一步都成功
+      step_height = height / 0.0254 / 5  # 分5步
+      puts "分步挖洞，每步高度: #{step_height}英寸"
+      
+      original_face = door_base_face
+      5.times do |i|
+        # 检查门洞面是否仍然有效
+        unless door_base_face.valid?
+          puts "❌ 挖洞步骤 #{i+1}/5 失败：门洞面无效"
+          break
+        end
+        
+        door_base_face.pushpull(step_height)
+        puts "挖洞步骤 #{i+1}/5 完成"
+      end
+      
+      # 验证挖洞结果
+      puts "\n=== 挖洞结果验证 ==="
+      
+      # 检查门洞面是否仍然有效
+      if door_base_face.valid?
+        puts "挖洞后门洞面状态:"
+        puts "  顶点数: #{door_base_face.vertices.length}"
+        puts "  边数: #{door_base_face.edges.length}"
+        
+        # 检查挖洞后的几何状态
+        if door_base_face.vertices.length > 0
+          min_z = door_base_face.vertices.map(&:position).map(&:z).min
+          max_z = door_base_face.vertices.map(&:position).map(&:z).max
+          actual_height = (max_z - min_z) * 0.0254  # 转换回米
+          puts "实际挖洞高度: #{actual_height}米"
+          puts "预期挖洞高度: #{height}米"
+          
+          if (actual_height - height).abs > 0.1
+            puts "⚠️  警告: 实际挖洞高度与预期不符"
+          else
+            puts "✅ 挖洞高度正确"
+          end
+        end
+      else
+        puts "⚠️  警告: 挖洞后门洞面无效，可能已被删除"
+      end
+      
+      puts "\n门洞生成完成！"
       puts "门高度: #{height}米"
       puts "门洞深度: #{wall_thickness * 0.0254}米"
     else
-      puts "警告: 门洞面创建失败"
+      puts "❌ 门洞面创建失败！"
       puts "  地面四点: #{ground_points.inspect}"
+      
+      # 尝试不同的点顺序创建门洞面
+      puts "\n尝试不同的点顺序创建门洞面..."
+      alternative_points = [
+        ground_points[0],
+        ground_points[3],
+        ground_points[2],
+        ground_points[1]
+      ]
+      
+      puts "替代点顺序:"
+      alternative_points.each_with_index do |point, i|
+        puts "  点#{i+1}: #{point.inspect}"
+      end
+      
+      door_base_face = wall_entities.add_face(alternative_points)
+      if door_base_face
+        puts "✅ 使用替代点顺序成功创建门洞面"
+        
+        # 检查面的法线方向
+        face_normal = door_base_face.normal
+        puts "替代门洞面法线: #{face_normal.inspect}"
+        
+        if face_normal.z < 0
+          puts "翻转替代门洞面法线方向"
+          door_base_face.reverse!
+        end
+        
+        # 分步挖洞
+        puts "开始分步挖洞..."
+        step_height = height / 0.0254 / 5
+        5.times do |i|
+          door_base_face.pushpull(step_height)
+          puts "挖洞步骤 #{i+1}/5 完成"
+        end
+        
+        puts "✅ 门洞生成完成（使用替代方法）"
+      else
+        puts "❌ 所有方法都失败，无法创建门洞"
+        puts "建议检查门洞四点坐标的合理性"
+      end
     end
   
-    model.commit_operation
-  rescue => e
-    model.abort_operation if model
-    puts "创建门失败: #{Utils.ensure_utf8(e.message)}"
-    puts "错误详情: #{e.backtrace.join("\n")}"
+      model.commit_operation
+    rescue => e
+      model.abort_operation if model
+      puts "创建门失败: #{Utils.ensure_utf8(e.message)}"
+      puts "错误详情: #{e.backtrace.join("\n")}"
+    end
+  
+
+  
+  # 计算点到墙体的距离
+  def self.distance_point_to_wall(point, wall_start, wall_end)
+    wall_vector = wall_end - wall_start
+    wall_length = wall_vector.length
+    
+    if wall_length < 0.001
+      return (point - wall_start).length
+    end
+    
+    # 计算点到墙体的投影
+    wall_direction = wall_vector.normalize
+    point_to_wall_start = point - wall_start
+    
+    # 计算投影参数 t
+    t = point_to_wall_start.dot(wall_direction) / wall_length
+    
+    # 如果投影点在墙体范围内
+    if t >= 0.0 && t <= 1.0
+      # 计算投影点
+      projection_distance = t * wall_length
+      projection_vector = wall_direction.clone
+      projection_vector.length = projection_distance
+      projected_point = wall_start + projection_vector
+      
+      # 返回点到投影点的距离
+      return (point - projected_point).length
+    else
+      # 投影点在墙体范围外，返回到最近端点的距离
+      distance_to_start = (point - wall_start).length
+      distance_to_end = (point - wall_end).length
+      return [distance_to_start, distance_to_end].min
+    end
   end
   
   # 将点投影到墙体上
@@ -364,7 +559,7 @@ module DoorBuilder
     thickness_inches
   end
   
-  # 计算门洞地面四点坐标
+  # 计算门洞地面四点坐标 - 确保朝上的法线
   def self.calculate_door_ground_points(start_point, end_point, wall_thickness)
     # 计算墙体方向向量
     wall_vector = end_point - start_point
@@ -373,11 +568,18 @@ module DoorBuilder
     # 计算墙体法线（垂直于墙体方向和向上方向）
     wall_normal = wall_direction.cross(Geom::Vector3d.new(0, 0, 1)).normalize
     
+    # 确保法线朝上（Z分量为正）
+    if wall_normal.z < 0
+      puts "  墙体法线朝下，翻转法线方向"
+      wall_normal.reverse!
+    end
+    
     # 计算厚度向量 - 修复向量乘法问题
     thickness_vec = wall_normal.clone
     thickness_vec.length = wall_thickness
     
-    # 计算门洞地面四点（逆时针顺序）
+    # 计算门洞地面四点（确保朝上的法线）
+    # 使用右手定则：从起点到终点，然后沿厚度方向
     ground_points = [
       start_point,                                    # 点1：起点
       start_point + thickness_vec,                    # 点2：起点+厚度
@@ -388,6 +590,28 @@ module DoorBuilder
     puts "  墙体方向: #{wall_direction.inspect}"
     puts "  墙体法线: #{wall_normal.inspect}"
     puts "  厚度向量: #{thickness_vec.inspect}"
+    
+    # 验证四点顺序是否产生朝上的法线
+    test_face = Sketchup.active_model.entities.add_face(ground_points)
+    if test_face
+      test_normal = test_face.normal
+      puts "  测试面法线: #{test_normal.inspect}"
+      
+      if test_normal.z < 0
+        puts "  检测到测试面法线朝下，调整点顺序"
+        # 翻转点顺序
+        ground_points = [
+          start_point,                                # 点1：起点
+          end_point,                                  # 点2：终点
+          end_point + thickness_vec,                  # 点3：终点+厚度
+          start_point + thickness_vec                 # 点4：起点+厚度
+        ]
+        puts "  调整后点顺序: 起点->终点->终点+厚度->起点+厚度"
+      end
+      
+      # 删除测试面
+      test_face.erase!
+    end
     
     ground_points
   end
