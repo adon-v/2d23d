@@ -152,6 +152,19 @@ module ZoneBuilder
         zone_group.set_attribute('FactoryImporter', 'zone_type', 'outdoor')
         zone_group.set_attribute('FactoryImporter', 'zone_id', zone_data["id"])
         zone_group.set_attribute('FactoryImporter', 'zone_name', zone_data["name"])
+        
+        # 存储到实体存储器（独立功能，不影响主流程）
+        begin
+          EntityStorage.add_entity("outdoor_zone", zone_group, {
+            zone_id: zone_data["id"],
+            zone_name: zone_data["name"],
+            shape_type: shape_type,
+            points_count: points.size
+          })
+        rescue => e
+          puts "警告: 存储外部区域实体失败: #{e.message}"
+        end
+        
         created_outdoor_zones << zone_group
         puts "成功创建外部区域: #{zone_data["name"]} (#{zone_data["id"]})"
         
@@ -274,6 +287,8 @@ module ZoneBuilder
   
   # 生成工厂总地面（所有区域和外墙点的凸包）
   def self.generate_factory_total_ground(parent_group, zones_data, walls_data)
+    puts "【地面生成】开始基于区域和墙体生成大地面..."
+    
     # 收集所有区域和外墙的点
     all_points = []
     
@@ -298,21 +313,57 @@ module ZoneBuilder
     end
     
     all_points = all_points.compact
-    return if all_points.size < 3
+    if all_points.size < 3
+      puts "【地面生成】错误：收集的点数不足（#{all_points.size}），无法生成地面"
+      return
+    end
     
     hull = Utils.compute_convex_hull_2d(all_points)
-    return if hull.size < 3
+    if hull.size < 3
+      puts "【地面生成】错误：凸包计算失败，点数不足（#{hull.size}）"
+      return
+    end
     
-    # 生成总地面（Z轴位置设为0，作为基准）
-    ground_face = parent_group.entities.add_face(hull)
-    if ground_face
-      ground_face.material = [0, 128, 64]
-      ground_face.back_material = [0, 128, 64]
+    puts "【地面生成】凸包计算成功，点数: #{hull.size}"
+    
+    begin
+      # 创建地面组
+      ground_group = parent_group.entities.add_group
+      ground_group.name = "工厂总地面"
       
-      # 隐藏大地面的边缘线
-      ground_face.edges.each do |edge|
-        edge.hidden = true
+      # 生成总地面（Z轴位置设为0，作为基准）
+      ground_face = ground_group.entities.add_face(hull)
+      if ground_face
+        # 工厂大地面使用纯色，不应用材质
+        ground_face.material = [200, 200, 200]  # 浅灰色
+        ground_face.back_material = [200, 200, 200]
+        
+        # 设置地面属性
+        ground_face.set_attribute('FactoryImporter', 'face_type', 'factory_total_ground')
+        ground_face.set_attribute('FactoryImporter', 'generation_method', 'from_zones_and_walls')
+        ground_face.set_attribute('FactoryImporter', 'zones_count', zones_data ? zones_data.size : 0)
+        ground_face.set_attribute('FactoryImporter', 'walls_count', walls_data ? walls_data.size : 0)
+        
+        # 存储到实体存储器（独立功能，不影响主流程）
+        begin
+          EntityStorage.add_entity("factory_ground", ground_group, {
+            generation_method: "from_zones_and_walls",
+            zones_count: zones_data ? zones_data.size : 0,
+            walls_count: walls_data ? walls_data.size : 0
+          })
+        rescue => e
+          puts "警告: 存储工厂地面实体失败: #{e.message}"
+        end
+        
+        # 创建200mm厚度的地面（朝z轴负半轴方向）
+        create_thick_ground(ground_group, hull, 200.0)
+        
+        puts "【地面生成】基于区域和墙体的大地面生成成功（厚度200mm，朝z轴负半轴）"
+      else
+        puts "【地面生成】错误：无法创建地面面"
       end
+    rescue => e
+      puts "【地面生成】错误：生成地面时发生异常: #{e.message}"
     end
   end
   
@@ -364,9 +415,14 @@ module ZoneBuilder
         face = zone_group.entities.add_face(elevated_points)
         if face && face.valid?
           func = (zone["type"] || zone["name"] || "default").to_s
-          color = func_colors[func] || func_colors.values[idx % func_colors.size] || [200, 200, 200]
-          face.material = color
-          face.back_material = color
+          color_array = func_colors[func] || func_colors.values[idx % func_colors.size] || [200, 200, 200]
+          
+          # 创建区域地面材质对象
+          model = Sketchup.active_model
+          zone_material = model.materials.add("区域地面_#{zone["id"]}_材质")
+          zone_material.color = Sketchup::Color.new(*color_array)
+          face.material = zone_material
+          face.back_material = zone_material
           
           # 设置面的属性
           face.set_attribute('FactoryImporter', 'face_type', 'indoor_floor')
@@ -374,10 +430,24 @@ module ZoneBuilder
           face.set_attribute('FactoryImporter', 'zone_name', zone["name"] || "未命名区域")
           
           # 设置组的属性（重要：确保区域可以被识别）
+          zone_group.set_attribute('FactoryImporter', 'id', zone["id"])
           zone_group.set_attribute('FactoryImporter', 'zone_type', 'indoor')
           zone_group.set_attribute('FactoryImporter', 'zone_id', zone["id"])
           zone_group.set_attribute('FactoryImporter', 'zone_name', zone["name"] || "未命名区域")
           zone_group.set_attribute('FactoryImporter', 'zone_shape_type', shape["type"] || "polygon")
+          
+          # 存储到实体存储器（独立功能，不影响主流程）
+          begin
+            EntityStorage.add_entity("indoor_zone", zone_group, {
+              zone_id: zone["id"],
+              zone_name: zone["name"],
+              zone_type: zone["type"],
+              shape_type: shape["type"] || "polygon",
+              points_count: points.size
+            })
+          rescue => e
+            puts "警告: 存储内部区域实体失败: #{e.message}"
+          end
           
           # 隐藏区域的边缘线
           face.edges.each do |edge|
@@ -462,23 +532,41 @@ module ZoneBuilder
       
       puts "【地面生成】凸包计算成功，点数: #{hull.size}"
       
+      # 创建地面组
+      ground_group = parent_group.entities.add_group
+      ground_group.name = "工厂大地面"
+      
       # 生成总地面（Z轴位置设为0，作为基准）
-      ground_face = parent_group.entities.add_face(hull)
+      ground_face = ground_group.entities.add_face(hull)
       if ground_face
-        ground_face.material = [0, 128, 64]  # 深绿色
-        ground_face.back_material = [0, 128, 64]
-        
-        # 隐藏大地面的边缘线
-        ground_face.edges.each do |edge|
-          edge.hidden = true
-        end
-        
-        puts "【地面生成】基于工厂size的大地面生成成功"
+        # 创建工厂大地面材质对象
+        model = Sketchup.active_model
+        ground_material = model.materials.add("工厂大地面_材质")
+        ground_material.color = Sketchup::Color.new(200, 200, 200)  # 浅灰色
+        ground_face.material = ground_material
+        ground_face.back_material = ground_material
+        puts "工厂大地面使用材质对象（浅灰色）"
         
         # 设置地面属性
         ground_face.set_attribute('FactoryImporter', 'face_type', 'factory_total_ground')
         ground_face.set_attribute('FactoryImporter', 'generation_method', 'from_factory_size')
         ground_face.set_attribute('FactoryImporter', 'factory_count', factories_data.size)
+        
+        # 存储到实体存储器（独立功能，不影响主流程）
+        begin
+          EntityStorage.add_entity("factory_ground", ground_group, {
+            generation_method: "from_factory_size",
+            factory_count: factories_data.size,
+            hull_points: hull.size
+          })
+        rescue => e
+          puts "警告: 存储工厂地面实体失败: #{e.message}"
+        end
+        
+        # 创建200mm厚度的地面（朝z轴负半轴方向）
+        create_thick_ground(ground_group, hull, 200.0)
+        
+        puts "【地面生成】基于工厂size的大地面生成成功（厚度200mm，朝z轴负半轴）"
         
       else
         puts "【地面生成】错误：无法创建地面面"
@@ -538,28 +626,82 @@ module ZoneBuilder
     ]
     
     begin
-      default_ground = parent_group.entities.add_face(default_points)
+      # 创建地面组
+      ground_group = parent_group.entities.add_group
+      ground_group.name = "工厂默认地面"
+      
+      default_ground = ground_group.entities.add_face(default_points)
       if default_ground
-        default_ground.material = [128, 128, 128]  # 灰色
-        default_ground.back_material = [128, 128, 128]
-        
-        # 隐藏边缘线
-        default_ground.edges.each do |edge|
-          edge.hidden = true
-        end
+        # 工厂大地面使用纯色，不应用材质
+        default_ground.material = [200, 200, 200]  # 浅灰色
+        default_ground.back_material = [200, 200, 200]
+        puts "工厂大地面使用纯色（浅灰色）"
         
         # 设置地面属性
         default_ground.set_attribute('FactoryImporter', 'face_type', 'default_factory_ground')
         default_ground.set_attribute('FactoryImporter', 'generation_method', 'default_from_factories')
         default_ground.set_attribute('FactoryImporter', 'size', default_size)
         
-        puts "【地面生成】基于工厂数据的默认地面生成成功，尺寸: #{default_size.round(2)}米"
+        # 存储到实体存储器（独立功能，不影响主流程）
+        begin
+          EntityStorage.add_entity("factory_ground", ground_group, {
+            generation_method: "default_from_factories",
+            size: default_size
+          })
+        rescue => e
+          puts "警告: 存储默认工厂地面实体失败: #{e.message}"
+        end
+        
+        # 创建200mm厚度的地面（朝z轴负半轴方向）
+        create_thick_ground(ground_group, default_points, 200.0)
+        
+        puts "【地面生成】基于工厂数据的默认地面生成成功，尺寸: #{default_size.round(2)}米（厚度200mm，朝z轴负半轴）"
       else
         puts "【地面生成】错误：无法创建默认地面"
       end
     rescue => e
-      puts "【地面生成】错误：生成默认地面时发生异常: #{e.message}"
+              puts "【地面生成】错误：生成默认地面时发生异常: #{e.message}"
     end
+  end
+  
+  # 创建厚度地面（朝z轴负半轴方向）
+  def self.create_thick_ground(ground_group, top_points, thickness_mm)
+    puts "【地面生成】开始创建厚度地面，厚度: #{thickness_mm}mm"
+    
+    # 将毫米转换为米
+    thickness_m = thickness_mm * 0.001
+    
+    # 创建底部点（向下偏移厚度距离）
+    bottom_points = top_points.map do |point|
+      Geom::Point3d.new(point.x, point.y, point.z - thickness_m)
+    end
+    
+    # 创建侧面（连接顶部和底部）
+    sides = []
+    top_points.each_with_index do |top_point, i|
+      next_point_index = (i + 1) % top_points.size
+      next_top_point = top_points[next_point_index]
+      bottom_point = bottom_points[i]
+      next_bottom_point = bottom_points[next_point_index]
+      
+      # 创建侧面（四边形）
+      side_points = [top_point, next_top_point, next_bottom_point, bottom_point]
+      side_face = ground_group.entities.add_face(side_points)
+      if side_face
+        side_face.material = [100, 100, 100]  # 深灰色
+        side_face.back_material = [100, 100, 100]
+        sides << side_face
+      end
+    end
+    
+    # 创建底面
+    bottom_face = ground_group.entities.add_face(bottom_points)
+    if bottom_face
+      bottom_face.material = [80, 80, 80]  # 更深的灰色
+      bottom_face.back_material = [80, 80, 80]
+    end
+    
+    puts "【地面生成】厚度地面创建完成，侧面数: #{sides.size}"
   end
 end
     

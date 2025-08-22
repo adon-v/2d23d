@@ -44,7 +44,9 @@ module EquipmentBuilder
         # 创建设备组
         equipment_group = parent_group.entities.add_group
         equipment_group.name = "#{equipment_name} (#{equipment_id})"
+        equipment_group.set_attribute('FactoryImporter', 'id', equipment_id)
         equipment_group.set_attribute('FactoryImporter', 'equipment_id', equipment_id)
+        equipment_group.set_attribute('FactoryImporter', 'name', equipment_name)
         
         # 导入SKP模型
         if import_skp_component(equipment_group, skp_model, skp_lib_path, position, width, length, height, rotation)
@@ -55,6 +57,22 @@ module EquipmentBuilder
           create_placeholder(equipment_group, position, width, length, height, rotation)
           equipment_count += 1
           puts "为设备 #{equipment_id} (#{equipment_name}) 创建了占位体"
+        end
+        
+        # 存储到实体存储器（独立功能，不影响主流程）
+        begin
+          if defined?(EntityStorage)
+            EntityStorage.add_entity("equipment", equipment_group, {
+              equipment_id: equipment_id,
+              equipment_name: equipment_name,
+              skp_model: skp_model,
+              position: [position.x, position.y, position.z],
+              dimensions: { width: width, length: length, height: height },
+              rotation: rotation
+            })
+          end
+        rescue => e
+          puts "警告: 存储设备实体失败: #{e.message}"
         end
         
       rescue => e
@@ -156,8 +174,11 @@ module EquipmentBuilder
     # 创建底面
     base_face = parent_group.entities.add_face(points)
     
-    # 设置材质
-    base_face.material = [200, 200, 100]  # 浅黄色
+    # 创建设备占位体材质对象
+    model = Sketchup.active_model
+    equipment_material = model.materials.add("设备占位体_材质")
+    equipment_material.color = Sketchup::Color.new(200, 200, 100)  # 浅黄色
+    base_face.material = equipment_material
     
     # 拉伸
     base_face.pushpull(height) if base_face

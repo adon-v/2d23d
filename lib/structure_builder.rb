@@ -25,8 +25,12 @@ module StructureBuilder
           next
         end
         
+        # 创建立柱组
+        column_group = parent_group.entities.add_group
+        column_group.name = column_data['name'] || "立柱"
+        
         # 创建立柱面
-        column_face = parent_group.entities.add_face(valid_points)
+        column_face = column_group.entities.add_face(valid_points)
         unless column_face && column_face.is_a?(Sketchup::Face)
           puts "警告: 无法创建立柱面，跳过"
           next
@@ -60,11 +64,32 @@ module StructureBuilder
         
         # 设置立柱属性
         begin
+          column_group.set_attribute('FactoryImporter', 'type', 'column')
+          column_group.set_attribute('FactoryImporter', 'column_name', column_data['name'] || '立柱')
+          column_group.set_attribute('FactoryImporter', 'column_id', column_data['id'])
+          column_group.set_attribute('FactoryImporter', 'id', column_data['id'])
+          
+          # 立柱面的属性
           column_face.set_attribute('FactoryImporter', 'element_type', 'column')
           column_face.set_attribute('FactoryImporter', 'column_name', column_data['name'] || '立柱')
           column_face.set_attribute('FactoryImporter', 'column_id', column_data['id'])
         rescue => e
           puts "立柱属性设置失败: #{e.message}"
+        end
+        
+        # 存储到实体存储器
+        begin
+          if defined?(EntityStorage)
+            EntityStorage.add_entity("column", column_group, {
+              column_id: column_data['id'],
+              column_name: column_data['name'] || '立柱',
+              height: height * 0.0254,  # 转换为米
+              points: valid_points.map { |p| [p.x, p.y, p.z] }
+            })
+            puts "立柱已存储到实体存储器"
+          end
+        rescue => e
+          puts "存储立柱到实体存储器失败: #{e.message}"
         end
         
         puts "立柱创建成功: #{column_data['name'] || column_data['id']}"

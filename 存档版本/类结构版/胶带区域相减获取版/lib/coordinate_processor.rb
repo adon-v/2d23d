@@ -53,7 +53,20 @@ module CoordinateProcessor
     when Hash
       data.each do |key, value|
         if coordinate_key?(key)
-          process_coordinate_value(value, min_coords, max_coords)
+          # 特殊处理：检查size键的上下文
+          if key.to_s == "size"
+            # 如果是工厂级别的size，则处理为坐标
+            # 如果是窗户级别的size，则跳过
+            if is_factory_size_context(data)
+              puts "  识别坐标键: #{key} (工厂size)"
+              process_coordinate_value(value, min_coords, max_coords)
+            else
+              puts "  跳过尺寸键: #{key} (非坐标上下文)"
+            end
+          else
+            puts "  识别坐标键: #{key}"
+            process_coordinate_value(value, min_coords, max_coords)
+          end
         else
           traverse_coordinates(value, min_coords, max_coords)
         end
@@ -67,8 +80,34 @@ module CoordinateProcessor
   
   # 判断是否为坐标相关的键
   def self.coordinate_key?(key)
+    # 严格定义坐标键，避免误处理size等非坐标数据
+    # 注意：工厂的size是坐标数据，窗户的size是尺寸数据
     coordinate_keys = %w[start end points position size]
-    coordinate_keys.any? { |k| key.to_s.include?(k) }
+    coordinate_keys.any? { |k| key.to_s == k }
+  end
+  
+  # 判断当前上下文是否为工厂size（坐标数据）
+  def self.is_factory_size_context(data)
+    # 工厂size的特征：
+    # 1. 在工厂级别（factories数组中的对象）
+    # 2. size值是二维数组的数组，如 [[x1,y1], [x2,y2]]
+    # 3. 不在windows或doors等子对象中
+    
+    # 检查是否在windows上下文中
+    return false if data.key?('windows') || data.key?('doors')
+    
+    # 检查size值的格式
+    if data.key?('size') && data['size'].is_a?(Array)
+      size_value = data['size']
+      # 工厂size应该是 [[x1,y1], [x2,y2]] 格式
+      if size_value.size == 2 && 
+         size_value[0].is_a?(Array) && size_value[1].is_a?(Array) &&
+         size_value[0].size >= 2 && size_value[1].size >= 2
+        return true
+      end
+    end
+    
+    false
   end
   
   # 处理坐标值
@@ -80,6 +119,8 @@ module CoordinateProcessor
         if value.size >= 2
           x, y = value[0], value[1]
           z = value.size >= 3 ? value[2] : 0
+          
+          puts "  发现坐标点: [#{x}, #{y}, #{z}]"
           
           min_coords[:x] = [min_coords[:x], x].min
           min_coords[:y] = [min_coords[:y], y].min
@@ -116,33 +157,49 @@ module CoordinateProcessor
     when Hash
       data.each do |key, value|
         if coordinate_key?(key)
-          data[key] = translate_coordinate_value(value, offset_x, offset_y, offset_z)
+          # 特殊处理：检查size键的上下文
+          if key.to_s == "size"
+            # 如果是工厂级别的size，则处理为坐标
+            # 如果是窗户级别的size，则跳过
+            if is_factory_size_context(data)
+              puts "  平移坐标键: #{key} (工厂size)"
+              data[key] = translate_coordinate_value(value, offset_x, offset_y, offset_z)
+            else
+              puts "  跳过尺寸键: #{key} (非坐标上下文)"
+            end
+          else
+            data[key] = translate_coordinate_value(value, offset_x, offset_y, offset_z)
+          end
         else
           apply_translation(value, offset_x, offset_y, offset_z)
         end
       end
     when Array
-      data.each_with_index do |item, index|
-        if item.is_a?(Numeric) && coordinate_array?(data)
-          # 这是一个坐标数组，应用平移
-          if index == 0
-            data[index] = item + offset_x
-          elsif index == 1
-            data[index] = item + offset_y
-          elsif index == 2
-            data[index] = item + offset_z
-          end
-        else
-          # 递归处理
-          apply_translation(item, offset_x, offset_y, offset_z)
-        end
+      # 数组的处理需要更谨慎
+      # 只有在特定上下文中的数组才应该被当作坐标处理
+      # 这里我们只处理直接包含数值的数组，并且这些数组应该已经在坐标上下文中
+      if data.all? { |item| item.is_a?(Numeric) } && data.size >= 2 && data.size <= 3
+        # 这是一个数值数组，可能是坐标，但我们不在这里处理
+        # 坐标数组的处理应该在 translate_coordinate_value 中进行
+        return
+      else
+        # 递归处理数组中的元素
+        data.each { |item| apply_translation(item, offset_x, offset_y, offset_z) }
       end
     end
   end
   
   # 判断数组是否为坐标数组
   def self.coordinate_array?(array)
-    array.size >= 2 && array.size <= 3 && array.all? { |v| v.is_a?(Numeric) }
+    # 严格判断坐标数组：只基于数组结构和数据类型，不基于数值大小
+    # 1. 数组大小必须是2或3
+    # 2. 所有元素必须是数字
+    # 3. 不基于数值大小判断，因为坐标值可能很大也可能很小
+    return false unless array.size >= 2 && array.size <= 3 && array.all? { |v| v.is_a?(Numeric) }
+    
+    # 移除基于数值大小的判断，改为基于上下文判断
+    # 坐标数组的识别应该依赖于其所在的上下文（父级键名）
+    true
   end
   
   # 平移单个坐标值

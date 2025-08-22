@@ -14,6 +14,35 @@ module UIManager
       cmd.status_bar_text = "导入工厂布局及设备"
       
       plugin_menu.add_item(cmd)
+      
+      # 添加实体存储器菜单（独立功能）
+      begin
+        # 优先尝试简化版实体存储器（兼容性更好）
+        if defined?(EntityStorageSimple)
+          EntityStorageSimple.create_simple_menu
+          puts "简化版实体存储器菜单创建成功"
+        elsif defined?(EntityStorage)
+          EntityStorage.create_storage_menu
+          puts "标准版实体存储器菜单创建成功"
+        else
+          puts "实体存储器模块未加载，跳过菜单创建"
+        end
+      rescue => e
+        puts "警告: 创建实体存储器菜单失败，不影响主功能: #{e.message}"
+        puts "建议使用简化版实体存储器以提高兼容性"
+      end
+      
+      # 添加材质管理器菜单（独立功能）
+      begin
+        if defined?(MaterialManager)
+          MaterialManager.init
+          puts "材质管理器菜单创建成功"
+        else
+          puts "材质管理器模块未加载，跳过菜单创建"
+        end
+      rescue => e
+        puts "警告: 创建材质管理器菜单失败，不影响主功能: #{e.message}"
+      end
     end
   end
   

@@ -116,8 +116,44 @@ module FlowBuilder
         polygon = polygon.map { |pt| Geom::Point3d.new(pt.x, pt.y, pt.z + 0.1) }
         face = parent_group.entities.add_face(polygon)
         if face
-          face.material = color
-          face.back_material = color
+          # 创建流通道材质对象
+          model = Sketchup.active_model
+          flow_material = model.materials.add("流通道_#{flow['id'] || idx}_材质")
+          flow_material.color = Sketchup::Color.new(*color)
+          face.material = flow_material
+          face.back_material = flow_material
+          
+          # 创建流通道组
+          flow_group = parent_group.entities.add_group
+          flow_group.name = "流通道_#{flow['id'] || idx}"
+          
+          # 将面移动到流通道组中
+          face.parent.entities.erase_entities([face])
+          flow_group.entities.add_face(polygon)
+          
+          # 设置流通道组属性
+          flow_group.set_attribute('FactoryImporter', 'id', flow['id'] || "flow_#{idx}")
+          flow_group.set_attribute('FactoryImporter', 'flow_id', flow['id'])
+          flow_group.set_attribute('FactoryImporter', 'flow_index', idx)
+          flow_group.set_attribute('FactoryImporter', 'flow_type', 'channel')
+          flow_group.set_attribute('FactoryImporter', 'name', "流通道_#{flow['id'] || idx}")
+          
+          # 存储到实体存储器（独立功能，不影响主流程）
+          begin
+            if defined?(EntityStorage)
+              EntityStorage.add_entity("flow", flow_group, {
+                flow_id: flow['id'],
+                flow_index: idx,
+                flow_type: 'channel',
+                segments_count: segments.size,
+                center_points_count: center_points.size,
+                color: color
+              })
+            end
+          rescue => e
+            puts "警告: 存储流通道实体失败: #{e.message}"
+          end
+          
           puts "【通道测试】已生成横平竖直无重叠通道面，高度: z+0.2米"
         else
           puts "【通道测试】警告: 多段通道面生成失败"
@@ -174,7 +210,11 @@ module FlowBuilder
     
     # 绘制箭头主轴
     shaft_line = group.entities.add_line(shaft_start, shaft_end)
-    shaft_line.material = color
+    # 创建箭头材质对象
+    model = Sketchup.active_model
+    arrow_material = model.materials.add("箭头_材质")
+    arrow_material.color = Sketchup::Color.new(*color)
+    shaft_line.material = arrow_material
     
     # 计算箭头翼角度
     wing_vec1 = Geom::Vector3d.new(dir.x, dir.y, 0).normalize
@@ -197,7 +237,7 @@ module FlowBuilder
     
     wing_line1 = group.entities.add_line(shaft_end, wing_end1)
     wing_line2 = group.entities.add_line(shaft_end, wing_end2)
-    wing_line1.material = wing_line2.material = color
+    wing_line1.material = wing_line2.material = arrow_material
     
     puts "【箭头测试】直线箭头创建成功"
   end

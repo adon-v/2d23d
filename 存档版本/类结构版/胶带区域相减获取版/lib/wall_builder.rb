@@ -74,8 +74,31 @@ module WallBuilder
         
         wall_group = create_vertical_wall(wall_data, start_point, end_point, thickness, height, normal, parent_group)
         
-        wall_id = wall_data["id"] || wall_data["name"] || "wall_#{rand(10000)}"
+        # 确保每个墙体都有唯一的ID
+        wall_id = wall_data["id"] || "wall_#{wall_entities.length + 1}"
+        wall_name = wall_data["name"] || "墙体_#{wall_id}"
+        
+        # 设置墙体的唯一标识
+        wall_group.set_attribute('FactoryImporter', 'id', wall_id)
         wall_group.set_attribute('FactoryImporter', 'wall_id', wall_id)
+        wall_group.set_attribute('FactoryImporter', 'name', wall_name)
+        
+        # 更新组名称，确保唯一性
+        wall_group.name = wall_name
+        
+        # 存储到实体存储器（独立功能，不影响主流程）
+        begin
+          EntityStorage.add_entity("wall", wall_group, {
+            wall_id: wall_id,
+            wall_name: wall_data["name"],
+            start_point: wall_data["start"],
+            end_point: wall_data["end"],
+            thickness: thickness,
+            height: height
+          })
+        rescue => e
+          puts "警告: 存储墙体实体失败: #{e.message}"
+        end
         
         wall_entities << wall_group
         
@@ -210,7 +233,15 @@ module WallBuilder
       
       # 设置墙体材质
       faces.each do |face|
-        face.material = [128, 128, 128] unless face.deleted?
+        unless face.deleted?
+          # 使用默认颜色
+          face.material = [128, 128, 128]
+          face.back_material = [128, 128, 128]
+          
+          # 设置面的属性
+          face.set_attribute('FactoryImporter', 'face_type', 'wall_face')
+          face.set_attribute('FactoryImporter', 'wall_id', wall_data['id'])
+        end
       end
     end
     

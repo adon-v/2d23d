@@ -25,8 +25,28 @@ module FactoryImporter
       layout_data = CoordinateProcessor.process_factory_coordinates(layout_data)
       puts "坐标预处理完成"
       
+      # 添加调试信息：检查窗户数据是否被修改
+      puts "=== 调试：检查坐标预处理后的窗户数据 ==="
+      layout_data["site"]["factories"].each do |factory|
+        walls = factory["walls"] || factory.dig("structures", "walls") || []
+        walls.each do |wall|
+          windows = wall["windows"] || []
+          windows.each do |window|
+            puts "窗户ID: #{window['id']}, size: #{window['size'].inspect}"
+          end
+        end
+      end
+      
       model = Sketchup.active_model
       model.start_operation("导入工厂布局", true)
+      
+      # 初始化实体存储器（独立功能，不影响主流程）
+      begin
+        EntityStorage.init
+        puts "实体存储器初始化成功"
+      rescue => e
+        puts "警告: 实体存储器初始化失败，继续执行主流程: #{e.message}"
+      end
       
       main_group = model.entities.add_group
       main_group.name = layout_data["site"]["name"] || "工厂布局"
@@ -68,6 +88,16 @@ module FactoryImporter
       end
       
       model.commit_operation
+      
+      # 导入完成后刷新实体存储器菜单
+      begin
+        if defined?(EntityStorage)
+          EntityStorage.refresh_storage_menu
+          puts "实体存储器菜单已刷新"
+        end
+      rescue => e
+        puts "警告: 刷新实体存储器菜单失败: #{e.message}"
+      end
       
       UI.messagebox("工厂布局导入成功!")
       
