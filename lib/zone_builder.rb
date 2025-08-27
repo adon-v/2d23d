@@ -85,8 +85,8 @@ module ZoneBuilder
     
     puts "区域导入完成，成功创建 #{created_zones.size} 个区域"
     
-    # 生成内部区域边界胶带
-    TapeBuilder.generate_zone_boundary_tapes(zones_data, parent_group)
+    # 生成内部区域边界胶带（使用新的胶带系统）
+    generate_zone_tapes_new(zones_data, parent_group)
     
     # 调用内部区域上色方法
     self.create_indoor_zones_floor(parent_group, zones_data, shared_boundaries)
@@ -176,8 +176,8 @@ module ZoneBuilder
       end
     end
     
-    # 生成外部区域共享边界胶带
-    TapeBuilder.generate_outdoor_zone_boundary_tapes(zones_data, outdoor_group)
+    # 生成外部区域共享边界胶带（使用新的胶带系统）
+    generate_outdoor_zone_tapes_new(zones_data, outdoor_group)
     
     # 为外部区域创建地面着色
     create_outdoor_zones_floor(outdoor_group, zones_data, shared_boundaries)
@@ -240,7 +240,7 @@ module ZoneBuilder
       end
       
       # 外部区域地面上浮高度调整为0.2（解决抢面问题）
-      elevated_points = optimized_points.map { |pt| Geom::Point3d.new(pt.x, pt.y, pt.z + 0.2) }
+      elevated_points = optimized_points.map { |pt| Geom::Point3d.new(pt.x, pt.y, pt.z + 0.01) }
       
       begin
         # 创建外部区域组，确保区域可以被选中
@@ -404,7 +404,7 @@ module ZoneBuilder
       end
       
       # 内部区域地面上浮高度调整为0.3（高于外部区域，解决抢面问题）
-      elevated_points = optimized_points.map { |pt| Geom::Point3d.new(pt.x, pt.y, pt.z + 0.3) }
+      elevated_points = optimized_points.map { |pt| Geom::Point3d.new(pt.x, pt.y, pt.z + 0.01) }
       
       begin
         # 创建区域组，确保区域可以被选中
@@ -702,6 +702,82 @@ module ZoneBuilder
     end
     
     puts "【地面生成】厚度地面创建完成，侧面数: #{sides.size}"
+  end
+
+  # 新的胶带生成方法：为内部区域生成边界胶带
+  def self.generate_zone_tapes_new(zones_data, parent_group)
+    puts "【新胶带系统】开始生成内部区域边界胶带..."
+    
+    zones_data.each_with_index do |zone_data, zone_index|
+      begin
+        shape = zone_data["shape"]
+        next unless shape && shape["points"]
+        
+        # 处理2D点坐标，自动添加Z坐标
+        points = shape["points"].map do |point|
+          if point.is_a?(Array) && point.size == 2
+            # 如果是2D点 [x, y]，自动添加Z=0
+            Utils.validate_and_create_point([point[0], point[1], 0])
+          else
+            Utils.validate_and_create_point(point)
+          end
+        end.compact
+        next if points.size < 3
+        
+        zone_name = zone_data["name"] || zone_data["id"] || "区域#{zone_index}"
+        puts "【新胶带系统】为内部区域 #{zone_name} 生成胶带，点数: #{points.size}"
+        
+        # 调用新的胶带生成方法
+        if defined?(TapeBuilder::Builder)
+          TapeBuilder::Builder.generate_tape_from_points(points, parent_group)
+        else
+          puts "【新胶带系统】警告：TapeBuilder::Builder未定义，跳过胶带生成"
+        end
+        
+      rescue => e
+        puts "【新胶带系统】生成内部区域 #{zone_data["name"] || zone_data["id"]} 胶带失败: #{e.message}"
+      end
+    end
+    
+    puts "【新胶带系统】内部区域边界胶带生成完成"
+  end
+
+  # 新的胶带生成方法：为外部区域生成外部区域边界胶带
+  def self.generate_outdoor_zone_tapes_new(zones_data, parent_group)
+    puts "【新胶带系统】开始生成外部区域边界胶带..."
+    
+    zones_data.each_with_index do |zone_data, zone_index|
+      begin
+        shape = zone_data["shape"]
+        next unless shape && shape["points"]
+        
+        # 处理2D点坐标，自动添加Z坐标
+        points = shape["points"].map do |point|
+          if point.is_a?(Array) && point.size == 2
+            # 如果是2D点 [x, y]，自动添加Z=0.2
+            Utils.validate_and_create_point([point[0], point[1], 0])
+          else
+            Utils.validate_and_create_point(point)
+          end
+        end.compact
+        next if points.size < 3
+        
+        zone_name = zone_data["name"] || zone_data["id"] || "外部区域#{zone_index}"
+        puts "【新胶带系统】为外部区域 #{zone_name} 生成胶带，点数: #{points.size}"
+        
+        # 调用新的胶带生成方法
+        if defined?(TapeBuilder::Builder)
+          TapeBuilder::Builder.generate_tape_from_points(points, parent_group)
+        else
+          puts "【新胶带系统】警告：TapeBuilder::Builder未定义，跳过胶带生成"
+        end
+        
+      rescue => e
+        puts "【新胶带系统】生成外部区域 #{zone_data["name"] || zone_data["id"]} 胶带失败: #{e.message}"
+      end
+    end
+    
+    puts "【新胶带系统】外部区域边界胶带生成完成"
   end
 end
     

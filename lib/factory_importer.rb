@@ -2,6 +2,14 @@
 require 'json'
 require_relative 'coordinate_processor'
 
+# 加载新的胶带生成系统
+begin
+  require_relative 'TapeBuilder/main'
+  puts "新胶带系统加载成功"
+rescue => e
+  puts "警告：新胶带系统加载失败: #{e.message}"
+end
+
 module FactoryImporter
   # 导入工厂布局
   def self.import_factory_layout
@@ -46,6 +54,16 @@ module FactoryImporter
         puts "实体存储器初始化成功"
       rescue => e
         puts "警告: 实体存储器初始化失败，继续执行主流程: #{e.message}"
+      end
+
+      # 初始化新胶带系统
+      begin
+        if defined?(TapeBuilder)
+          TapeBuilder.init
+          puts "新胶带系统初始化成功"
+        end
+      rescue => e
+        puts "警告: 新胶带系统初始化失败，继续执行主流程: #{e.message}"
       end
       
       main_group = model.entities.add_group
