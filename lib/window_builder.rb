@@ -8,7 +8,10 @@ module WindowBuilder
 
   # 统一创建所有窗户
   def self.create_all_windows(window_data_list, parent_group)
-    puts "开始创建窗户..."
+    puts "=== 开始创建窗户 ==="
+    puts "输入数据: #{window_data_list.length} 个窗户"
+    puts "父组: #{parent_group.name rescue '未知'}"
+    puts "父组类型: #{parent_group.class}"
     window_count = 0
     
     window_data_list.each do |window_item|
@@ -75,18 +78,30 @@ module WindowBuilder
     height_mm = normalize_to_millimeters(size[1], DEFAULT_HEIGHT)
     height_pos_mm = normalize_to_millimeters(height_above_ground, DEFAULT_HEIGHT_POS)
 
-    puts "窗户参数: 宽度=#{width_mm}mm, 高度=#{height_mm}mm, 离地高度=#{height_pos_mm}mm"
-
     # 获取墙体信息
     wall_start = Utils.validate_and_create_point(wall_data["start"])
     wall_end = Utils.validate_and_create_point(wall_data["end"])
     # 墙体厚度直接使用毫米单位，不需要normalize_to_millimeters
     wall_thickness_mm = Utils.parse_number(wall_data["thickness"]) || 200
 
+    puts "=== 窗户关键参数信息 ==="
+    puts "窗户ID: #{window_data['id'] || '未知'}"
+    puts "窗户名称: #{window_data['name'] || '未知'}"
+    puts "原始position数据: #{window_data['position'].inspect}"
+    puts "转换后position对象: #{position.inspect}"
+    puts "窗户XY坐标: X=#{position.x.round(6)}m, Y=#{position.y.round(6)}m"
+    puts "窗户尺寸: 宽度=#{width_mm}mm (#{(width_mm/1000.0).round(3)}m), 高度=#{height_mm}mm (#{(height_mm/1000.0).round(3)}m)"
+    puts "窗户离地高度: #{height_pos_mm}mm (#{(height_pos_mm/1000.0).round(3)}m)"
+    puts "墙体厚度: #{wall_thickness_mm}mm (#{(wall_thickness_mm/1000.0).round(3)}m)"
+
     if !wall_start || !wall_end
       puts "警告: 墙体坐标无效，无法创建窗户"
       return
     end
+
+    puts "墙体起点: #{wall_start.inspect}"
+    puts "墙体终点: #{wall_end.inspect}"
+    puts "墙体长度: #{(wall_end - wall_start).length.round(3)}m"
 
     # 创建窗户
     create_window_on_wall(wall_group, wall_data, window_data, position, width_mm, height_mm, height_pos_mm, wall_thickness_mm)
@@ -119,7 +134,12 @@ module WindowBuilder
       center_z = height_pos_mm/25.4
       
       window_center_3d = Geom::Point3d.new(center_x, center_y, center_z)
-      puts "窗户中心点: #{window_center_3d.inspect} (米)"
+      puts "=== 窗户3D中心点计算 ==="
+      puts "原始XY坐标: X=#{center_x.round(6)}m, Y=#{center_y.round(6)}m"
+      puts "高度转换: #{height_pos_mm}mm -> #{center_z.round(6)}m"
+      puts "最终3D中心点: #{window_center_3d.inspect}"
+      puts "中心点类型: #{window_center_3d.class}"
+      puts "中心点坐标: X=#{window_center_3d.x.round(6)}m, Y=#{window_center_3d.y.round(6)}m, Z=#{window_center_3d.z.round(6)}m"
       
       # 第三步：根据position、size、height和墙体方向计算窗户面角点
       puts "\n=== 计算窗户面角点 ==="
@@ -136,7 +156,21 @@ module WindowBuilder
       
       puts "投影后角点:"
       projected_corners.each_with_index do |point, i|
-        puts "  点#{i+1}: #{point.inspect}"
+        puts "  点#{i+1}: #{point.inspect} (X=#{point.x.round(6)}m, Y=#{point.y.round(6)}m, Z=#{point.z.round(6)}m)"
+      end
+      
+      # 计算投影后的窗户尺寸
+      if projected_corners.length >= 4
+        width_vector = projected_corners[1] - projected_corners[0]
+        height_vector = projected_corners[3] - projected_corners[0]
+        projected_width = width_vector.length
+        projected_height = height_vector.length
+        
+        puts "=== 投影后窗户尺寸 ==="
+        puts "  投影后宽度: #{projected_width.round(6)}m"
+        puts "  投影后高度: #{projected_height.round(6)}m"
+        puts "  宽度向量: #{width_vector.inspect}"
+        puts "  高度向量: #{height_vector.inspect}"
       end
       
       # 第五步：在墙面上挖洞
@@ -166,6 +200,11 @@ module WindowBuilder
 
   # 计算窗户面角点坐标
   def self.calculate_window_corners(center, width_mm, height_mm, wall_direction)
+    puts "=== 窗户角点计算详情 ==="
+    puts "  输入中心点: #{center.inspect}"
+    puts "  墙体方向向量: #{wall_direction.inspect}"
+    puts "  墙体方向长度: #{wall_direction.length.round(6)}"
+    
     half_width_mm = (width_mm/25.4) / 2
     half_height_mm = (height_mm/25.4) / 2
     
@@ -179,15 +218,25 @@ module WindowBuilder
     width_right_vec = wall_direction.clone
     width_right_vec.length = half_width_mm
     
+    puts "  宽度偏移向量: 左=#{width_left_vec.inspect}, 右=#{width_right_vec.inspect}"
+    
     # 计算高度方向的偏移向量（Z轴方向）
     height_down_vec = Geom::Vector3d.new(0, 0, -half_height_mm)
     height_up_vec = Geom::Vector3d.new(0, 0, half_height_mm)
+    
+    puts "  高度偏移向量: 下=#{height_down_vec.inspect}, 上=#{height_up_vec.inspect}"
     
     # 计算四个角点（逆时针顺序）
     bottom_left = center + width_left_vec + height_down_vec
     bottom_right = center + width_right_vec + height_down_vec
     top_right = center + width_right_vec + height_up_vec
     top_left = center + width_left_vec + height_up_vec
+    
+    puts "  计算出的角点坐标:"
+    puts "    左下角: #{bottom_left.inspect} (X=#{bottom_left.x.round(6)}m, Y=#{bottom_left.y.round(6)}m, Z=#{bottom_left.z.round(6)}m)"
+    puts "    右下角: #{bottom_right.inspect} (X=#{bottom_right.x.round(6)}m, Y=#{bottom_right.y.round(6)}m, Z=#{bottom_right.z.round(6)}m)"
+    puts "    右上角: #{top_right.inspect} (X=#{top_right.x.round(6)}m, Y=#{top_right.y.round(6)}m, Z=#{top_right.z.round(6)}m)"
+    puts "    左上角: #{top_left.inspect} (X=#{top_left.x.round(6)}m, Y=#{top_left.y.round(6)}m, Z=#{top_left.z.round(6)}m)"
     
     [bottom_left, bottom_right, top_right, top_left]
   end
@@ -443,12 +492,19 @@ module WindowBuilder
 
   # 创建独立窗户
   def self.create_independent_window(window_data, parent_group)
+    puts "=== 创建独立窗户 ==="
+    puts "窗户ID: #{window_data['id'] || '未知'}"
+    puts "窗户名称: #{window_data['name'] || '未知'}"
+    
     position = Utils.validate_and_create_point(window_data["position"])
     
     if !position
       puts "警告: 独立窗户位置无效，跳过 (ID: #{window_data['id'] || '未知'})"
       return
     end
+    
+    puts "独立窗户位置: #{position.inspect}"
+    puts "独立窗户XY坐标: X=#{position.x.round(6)}m, Y=#{position.y.round(6)}m, Z=#{position.z.round(6)}m"
     
     # 解析尺寸
     size = window_data["size"] || []
@@ -460,6 +516,8 @@ module WindowBuilder
     width_m = width_mm * 0.001
     height_m = height_mm * 0.001
     depth_m = depth_mm * 0.001
+    
+    puts "独立窗户尺寸: 宽度=#{width_m.round(3)}m, 高度=#{height_m.round(3)}m, 深度=#{depth_m.round(3)}m"
     
     # 创建窗户组
     window_group = parent_group.entities.add_group
@@ -500,6 +558,8 @@ module WindowBuilder
       end
       
       puts "独立窗户创建成功: #{window_group.name}"
+      puts "最终窗户位置: 起点=#{points[0].inspect}, 终点=#{points[2].inspect}"
+      puts "窗户几何体: 宽度=#{width_m.round(3)}m, 高度=#{height_m.round(3)}m, 深度=#{depth_m.round(3)}m"
     else
       puts "警告: 创建独立窗户失败"
     end

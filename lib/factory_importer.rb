@@ -2,13 +2,14 @@
 require 'json'
 require_relative 'coordinate_processor'
 
-# 加载新的胶带生成系统
-begin
-  require_relative 'TapeBuilder/main'
-  puts "新胶带系统加载成功"
-rescue => e
-  puts "警告：新胶带系统加载失败: #{e.message}"
-end
+# TapeBuilder现在通过主插件的统一加载机制加载，不需要在这里单独加载
+# 注释掉旧的加载代码
+# begin
+#   require_relative 'TapeBuilder/main'
+#   puts "新胶带系统加载成功"
+# rescue => e
+#   puts "警告：新胶带系统加载失败: #{e.message}"
+# end
 
 module FactoryImporter
   # 导入工厂布局
